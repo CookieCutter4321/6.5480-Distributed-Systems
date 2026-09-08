@@ -39,11 +39,46 @@ func CallExample() {
 	reply := Reply{}
 
 	ok := call("Coordinator.GetTask", &args, &reply)
-	if ok {
-		fmt.Printf("File assigned: %s\n | Worker ID assigned: %d\n", reply.FileName, reply.WorkerId)
-	} else {
+	if !ok {
 		fmt.Printf("call failed!\n")
+		return
 	}
+	fmt.Printf("File assigned: %s\n | Worker ID assigned: %d\n", reply.FileName, reply.WorkerId)
+
+
+	// read each input file,
+	// pass it to Map,
+	// accumulate the intermediate Map output.
+	intermediate := []mr.KeyValue{}
+	for _, filename := range os.Args[2:] {
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatalf("cannot open %v", filename)
+		}
+		content, err := ioutil.ReadAll(file)
+		if err != nil {
+			log.Fatalf("cannot read %v", filename)
+		}
+		file.Close()
+		kva := mapf(filename, string(content))
+		intermediate = append(intermediate, kva...)
+	}
+
+	// Perform the actual work while keeping in mind what partition we are on.
+	// The partition can be obtained by hashing the file we are assigned, which will be in 
+	// the intermediate file name.
+
+	// 1. Create the File for us to write to.
+
+	// 2. Pass to write.
+
+	// 3. Inform via rpc that the task was completed 
+	
+	//also, need a feature to handle timeouts (10s)
+	
+
+
+	
 }
 
 // send an RPC request to the coordinator, wait for the response.

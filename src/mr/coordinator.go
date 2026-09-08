@@ -41,11 +41,7 @@ func (c * Coordinator) GetTask(args *Args, reply *Reply) error {
 	}
 	return nil
 }
-// todo: also need to keep track of mapper id and reducer id:
-/*
-mapper id to prevent collisions; each mapper writes to its own file for its own separate partition
-reducer id for partitions
-*/
+
 func (c *Coordinator) server(sockname string) {
 	rpc.Register(c)
 	rpc.HandleHTTP()
