@@ -16,6 +16,7 @@ type Coordinator struct {
 }
 
 
+var nReduce int
 // Grab an available task
 func (c * Coordinator) GetTask(args *Args, reply *Reply) error {
 	// TODO: add a queue based data structure instead of iterating for a task.
@@ -31,7 +32,7 @@ func (c * Coordinator) GetTask(args *Args, reply *Reply) error {
 			c.mu.Unlock()
 			continue
 		}
-
+		reply.NReduce = nReduce
 		reply.FileName = FileName
 		reply.WorkerId = c.WorkerId
 		c.WorkerId++
@@ -73,7 +74,7 @@ func (c *Coordinator) Done() bool {
 // create a Coordinator.
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
-func MakeCoordinator(sockname string, files []string, nReduce int) *Coordinator {
+func MakeCoordinator(sockname string, files []string, NewNReduce int) *Coordinator {
 	c := Coordinator{}
 
 	// 1. Load the tasks (files) 
@@ -81,7 +82,7 @@ func MakeCoordinator(sockname string, files []string, nReduce int) *Coordinator 
 		c.Tasks = append(c.Tasks, f)
 		c.Statuses = append(c.Statuses, 0)
 	}
-
+	nReduce = NewNReduce
 	c.server(sockname)
 	return &c
 }

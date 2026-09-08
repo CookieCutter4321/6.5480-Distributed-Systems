@@ -6,7 +6,6 @@ import "net/rpc"
 import "hash/fnv"
 import "os"
 
-
 // Map functions return a slice of KeyValue.
 type KeyValue struct {
 	Key   string
@@ -23,18 +22,24 @@ func ihash(key string) int {
 
 var coordSockName string // socket for coordinator
 
+var mapf func(string, string) []KeyValue
+var reducef func(string, []string) string
 
 // main/mrworker.go calls this function.
 func Worker(sockname string, mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	coordSockName = sockname
-
+	mapf = mapf
+	reducef = reducef
 	// 1. Grab a Task
 	CallExample()
 }
 
 func CallExample() {
+	var workerId int;
+	var partitionId int;
+	
 	args := Args{}
 	reply := Reply{}
 
@@ -43,42 +48,50 @@ func CallExample() {
 		fmt.Printf("call failed!\n")
 		return
 	}
-	fmt.Printf("File assigned: %s\n | Worker ID assigned: %d\n", reply.FileName, reply.WorkerId)
-
-
-	// read each input file,
-	// pass it to Map,
-	// accumulate the intermediate Map output.
-	intermediate := []mr.KeyValue{}
-	for _, filename := range os.Args[2:] {
-		file, err := os.Open(filename)
-		if err != nil {
-			log.Fatalf("cannot open %v", filename)
-		}
-		content, err := ioutil.ReadAll(file)
-		if err != nil {
-			log.Fatalf("cannot read %v", filename)
-		}
-		file.Close()
-		kva := mapf(filename, string(content))
-		intermediate = append(intermediate, kva...)
-	}
+	workerId = reply.WorkerId
+	partitionId = ihash(reply.FileName) % reply.NReduce
+	fmt.Printf("File assigned: %s\n | Worker ID assigned: %d\n %d (partition)\n", reply.FileName, workerId, partitionId) //figure out partition id ltr
 
 	// Perform the actual work while keeping in mind what partition we are on.
 	// The partition can be obtained by hashing the file we are assigned, which will be in 
 	// the intermediate file name.
 
-	// 1. Create the File for us to write to.
+	// 1. read contents of assigned file
 
-	// 2. Pass to write.
+	/*
+	targetFile, err := os.open(reply.FileName)
+	if err != nil {
+		log.Fatalf("cannot open %v", reply.FileName)
+		return
+	}
+	content, err := ioutil.ReadAll(targetFile)
+	if err != nil {
+		log.Fatalf("cannot read %v", reply.FileName)
+	}
+	targetFile.Close()
+
+
+	// 2. Create the File for us to write to as an intemediary: mr-WorkerId-PartitionId
+	iFileName := fmt.Sprintf("mr-%d-%d", workerId, partitionId) 
+
+	iFile, err := os.Create(iFileName)
+	if err != nil {
+		fmt.Printf("Error creating file: %v\n", err)
+		return
+	}
+	defer iFile.Close()
+
+
+	kva := mapf(filename, string(content))
+	intermediate = append(intermediate, kva...)
 
 	// 3. Inform via rpc that the task was completed 
+
 	
+
+
 	//also, need a feature to handle timeouts (10s)
-	
-
-
-	
+	*/
 }
 
 // send an RPC request to the coordinator, wait for the response.
