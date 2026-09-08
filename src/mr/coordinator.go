@@ -5,25 +5,47 @@ import "net"
 import "os"
 import "net/rpc"
 import "net/http"
+import "sync"
 
 
 type Coordinator struct {
-	// Your definitions here.
-
+	mu sync.Mutex
+	Tasks []string // list of filepath strings
+	Statuses []int // 0 = unscheduled, 1 = in progress, 2 = done
+	WorkerId int // unique id to incr + 1 for each new worker
 }
 
-// Your code here -- RPC handlers for the worker to call.
 
-// an example RPC handler.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
-	reply.Y = args.X + 1
+// Grab an available task
+func (c * Coordinator) GetTask(args *Args, reply *Reply) error {
+	// TODO: add a queue based data structure instead of iterating for a task.
+	tasks := c.Tasks
+	statuses := c.Statuses
+
+	for i := range len(tasks) {
+		FileName := tasks[i]
+		Status := statuses[i]
+
+		c.mu.Lock()
+		if Status == 1 || Status == 2 {
+			c.mu.Unlock()
+			continue
+		}
+
+		reply.FileName = FileName
+		reply.WorkerId = c.WorkerId
+		c.WorkerId++
+		statuses[i] = 1
+		c.mu.Unlock()
+		break
+	}
 	return nil
 }
-
-
-// start a thread that listens for RPCs from worker.go
+// todo: also need to keep track of mapper id and reducer id:
+/*
+mapper id to prevent collisions; each mapper writes to its own file for its own separate partition
+reducer id for partitions
+*/
 func (c *Coordinator) server(sockname string) {
 	rpc.Register(c)
 	rpc.HandleHTTP()
@@ -35,13 +57,19 @@ func (c *Coordinator) server(sockname string) {
 	go http.Serve(l, nil)
 }
 
+
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := false
+	ret := true
 
 	// Your code here.
-
+	for _, s := range c.Statuses {
+		if s == 0 || s == 1 {
+			ret = false
+			break
+		}
+	}
 
 	return ret
 }
@@ -52,8 +80,11 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(sockname string, files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 
-	// Your code here.
-
+	// 1. Load the tasks (files) 
+	for _, f := range files {
+		c.Tasks = append(c.Tasks, f)
+		c.Statuses = append(c.Statuses, 0)
+	}
 
 	c.server(sockname)
 	return &c

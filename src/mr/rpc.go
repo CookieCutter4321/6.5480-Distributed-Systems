@@ -21,3 +21,14 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
+
+
+/* Ask the coordinator for a task*/ 
+type Args struct {
+}
+
+/* file name of an unstarted map task */
+type Reply struct {
+	FileName string
+	WorkerId int
+}
