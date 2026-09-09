@@ -5,6 +5,8 @@ import "log"
 import "net/rpc"
 import "hash/fnv"
 import "os"
+import "encoding/json"
+import "io/ioutil"
 
 // Map functions return a slice of KeyValue.
 type KeyValue struct {
@@ -26,12 +28,12 @@ var mapf func(string, string) []KeyValue
 var reducef func(string, []string) string
 
 // main/mrworker.go calls this function.
-func Worker(sockname string, mapf func(string, string) []KeyValue,
-	reducef func(string, []string) string) {
+func Worker(sockname string, NewMapf func(string, string) []KeyValue,
+	NewReducef func(string, []string) string) {
 
 	coordSockName = sockname
-	mapf = mapf
-	reducef = reducef
+	mapf = NewMapf
+	reducef = NewReducef
 	// 1. Grab a Task
 	CallExample()
 }
@@ -50,16 +52,10 @@ func CallExample() {
 	}
 	workerId = reply.WorkerId
 	partitionId = ihash(reply.FileName) % reply.NReduce
-	fmt.Printf("File assigned: %s\n | Worker ID assigned: %d\n %d (partition)\n", reply.FileName, workerId, partitionId) //figure out partition id ltr
-
-	// Perform the actual work while keeping in mind what partition we are on.
-	// The partition can be obtained by hashing the file we are assigned, which will be in 
-	// the intermediate file name.
+	fmt.Printf("File assigned: %s\n | Worker ID assigned: %d\n %d (partition)\n", reply.FileName, workerId, partitionId)
 
 	// 1. read contents of assigned file
-
-	/*
-	targetFile, err := os.open(reply.FileName)
+	targetFile, err := os.Open(reply.FileName)
 	if err != nil {
 		log.Fatalf("cannot open %v", reply.FileName)
 		return
@@ -70,7 +66,6 @@ func CallExample() {
 	}
 	targetFile.Close()
 
-
 	// 2. Create the File for us to write to as an intemediary: mr-WorkerId-PartitionId
 	iFileName := fmt.Sprintf("mr-%d-%d", workerId, partitionId) 
 
@@ -79,19 +74,28 @@ func CallExample() {
 		fmt.Printf("Error creating file: %v\n", err)
 		return
 	}
-	defer iFile.Close()
+	// 3. apply the mapper function and save as json to intermediary
+	kva := mapf(reply.FileName, string(content))
+	enc := json.NewEncoder(iFile)
+	for _, kv := range kva { // Iterating over []mr.KeyValue
+		err := enc.Encode(&kv)
 
+		if err != nil {
+        	return
+   		}
+	}
+	iFile.Close()
+	// 4. Inform via rpc that the task was completed 
 
-	kva := mapf(filename, string(content))
-	intermediate = append(intermediate, kva...)
-
-	// 3. Inform via rpc that the task was completed 
-
+	finishedArgs := Args{}
+	finishedArgs.FileName = iFileName
+	finishedReply := Reply{}
 	
-
-
-	//also, need a feature to handle timeouts (10s)
-	*/
+	ok := call("Coordinator.DoneDask", &args, &reply)
+	if !ok {
+		fmt.Printf("call failed!\n")
+		return
+	}
 }
 
 // send an RPC request to the coordinator, wait for the response.

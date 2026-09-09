@@ -11,3 +11,12 @@ type Reply struct {
 	WorkerId int
 	NReduce int
 }
+
+
+
+type FinishedArgs struct {
+	FileName string // Inform the coordinator the relevant file to grab
+}
+
+type FinishedReply struct {
+}

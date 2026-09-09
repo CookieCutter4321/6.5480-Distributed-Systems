@@ -12,13 +12,13 @@ type Coordinator struct {
 	mu sync.Mutex
 	Tasks []string // list of filepath strings
 	Statuses []int // 0 = unscheduled, 1 = in progress, 2 = done
+	Assigned []int
 	WorkerId int // unique id to incr + 1 for each new worker
 }
 
 
 var nReduce int
-// Grab an available task
-func (c * Coordinator) GetTask(args *Args, reply *Reply) error {
+func (c *Coordinator) GetTask(args *Args, reply *Reply) error {
 	// TODO: add a queue based data structure instead of iterating for a task.
 	tasks := c.Tasks
 	statuses := c.Statuses
@@ -26,7 +26,7 @@ func (c * Coordinator) GetTask(args *Args, reply *Reply) error {
 	for i := range len(tasks) {
 		FileName := tasks[i]
 		Status := statuses[i]
-
+		
 		c.mu.Lock()
 		if Status == 1 || Status == 2 {
 			c.mu.Unlock()
@@ -41,6 +41,15 @@ func (c * Coordinator) GetTask(args *Args, reply *Reply) error {
 		break
 	}
 	return nil
+}
+
+func (c *Coordinator) DidTask(args *FinishedArgs, reply *FinishedReply) error {
+	// Todo: introduce timestamps 
+	/*
+	1. Lazily check the timestamp. So if the time elapsed is > 10s, we can assign (even if it is in progress)
+	2. Refactor into a single struct, so that everything is tightly cohesive. e.g. a tuple like (FileName, status, lastAssigned)
+	*/
+	return
 }
 
 func (c *Coordinator) server(sockname string) {
