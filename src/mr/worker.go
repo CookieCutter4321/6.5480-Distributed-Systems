@@ -104,12 +104,11 @@ func CallExample() {
 	finishedArgs.TaskId = workerId
 	finishedReply := FinishedReply{}
 	
-	ok = call("Coordinator.DoneDask", &finishedArgs, &finishedReply)
+	ok = call("Coordinator.DidTask", &finishedArgs, &finishedReply)
 	if !ok {
 		fmt.Printf("call failed!\n")
 		return
 	}*/
-
 }
 
 // send an RPC request to the coordinator, wait for the response.

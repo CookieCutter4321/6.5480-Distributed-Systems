@@ -6,12 +6,13 @@ import "os"
 import "net/rpc"
 import "net/http"
 import "sync"
-
+import "time"
+import "fmt"
 
 type Task struct {
 	FileName string
 	Status int
-	Assigned int
+	Assigned int64
 }
 type Coordinator struct {
 	mu sync.Mutex
@@ -25,33 +26,46 @@ func (c *Coordinator) GetTask(args *Args, reply *Reply) error {
 	tasks := c.Tasks
 
 	for i := range len(tasks) {
+		c.mu.Lock()
+
 		FileName := tasks[i].FileName
 		Status := tasks[i].Status
-		
-		c.mu.Lock()
-		if Status == 1 || Status == 2 {
+		AssignedTime := tasks[i].Assigned
+		CurrentTime := time.Now().Unix()
+
+
+		if (Status == 1 && (CurrentTime - AssignedTime <= 10))|| Status == 2   { // cont if alrdy in prog / done, and if within the 10s limit
 			c.mu.Unlock()
 			continue
 		}
+		fmt.Printf("Reassigning task %d with Status %d, Elapsed time since last assignment: %d\n", i, Status, CurrentTime - AssignedTime)
+		
 		reply.NReduce = nReduce
 		reply.FileName = FileName
 		reply.WorkerId = i
 		
 		tasks[i].Status = 1
+		tasks[i].Assigned = CurrentTime
 		c.mu.Unlock()
 		break
 	}
 	return nil
 }
 
-/*
 func (c *Coordinator) DidTask(args *FinishedArgs, reply *FinishedReply) error {
-	// Todo: introduce timestamps 
-	1. Lazily check the timestamp. So if the time elapsed is > 10s, we can assign (even if it is in progress)
-	2. Refactor into a single struct, so that everything is tightly cohesive. e.g. a tuple like (FileName, status, lastAssigned)
-	return
+	CurrentTime := time.Now().Unix()
+	Task := c.Tasks[args.TaskId]
+
+	// Ignore if elapsed
+	if CurrentTime - Task.Assigned > 10 {
+		fmt.Println("Task is too late and thus ignored")
+		return nil
+	}
+
+	c.Tasks[args.TaskId].Status = 2
+	fmt.Printf("%d done", args.TaskId)
+	return nil
 }
-*/
 
 func (c *Coordinator) server(sockname string) {
 	rpc.Register(c)
