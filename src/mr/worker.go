@@ -40,19 +40,18 @@ func Worker(sockname string, NewMapf func(string, string) []KeyValue,
 
 func CallExample() {
 	var workerId int;
-	var partitionId int;
-	
+	var nReduce int;
+
 	args := Args{}
 	reply := Reply{}
-
 	ok := call("Coordinator.GetTask", &args, &reply)
 	if !ok {
 		fmt.Printf("call failed!\n")
 		return
 	}
 	workerId = reply.WorkerId
-	partitionId = ihash(reply.FileName) % reply.NReduce
-	fmt.Printf("File assigned: %s\n | Worker ID assigned: %d\n %d (partition)\n", reply.FileName, workerId, partitionId)
+	nReduce = reply.NReduce
+	fmt.Printf("File assigned: %s\n | worker ID assigned: %d\n", reply.FileName, workerId)
 
 	// 1. read contents of assigned file
 	targetFile, err := os.Open(reply.FileName)
@@ -66,36 +65,51 @@ func CallExample() {
 	}
 	targetFile.Close()
 
-	// 2. Create the File for us to write to as an intemediary: mr-WorkerId-PartitionId
-	iFileName := fmt.Sprintf("mr-%d-%d", workerId, partitionId) 
-
-	iFile, err := os.Create(iFileName)
-	if err != nil {
-		fmt.Printf("Error creating file: %v\n", err)
-		return
-	}
 	// 3. apply the mapper function and save as json to intermediary
+
 	kva := mapf(reply.FileName, string(content))
-	enc := json.NewEncoder(iFile)
-	for _, kv := range kva { // Iterating over []mr.KeyValue
-		err := enc.Encode(&kv)
 
-		if err != nil {
-        	return
-   		}
+	buckets := make([][]KeyValue, nReduce) 
+
+
+	// Figure out partitioning in memory first before I/O ops
+	for _, kv := range kva {
+		partitionId := ihash(kv.Key) % nReduce
+		buckets[partitionId] = append(buckets[partitionId], kv)
 	}
-	iFile.Close()
-	// 4. Inform via rpc that the task was completed 
 
-	finishedArgs := Args{}
-	finishedArgs.FileName = iFileName
-	finishedReply := Reply{}
+	for p, arr := range buckets {
+
+		iFileName := fmt.Sprintf("mr-%d-%d", workerId, p) 
+		iFile, err := os.OpenFile(iFileName, os.O_RDWR|os.O_CREATE, 0666)
+		if err != nil {
+			fmt.Printf("Error creating file: %v\n", err)
+			return
+		}
+		defer iFile.Close()
+
+		enc := json.NewEncoder(iFile)
+		for _, kv := range arr {
+			err = enc.Encode(&kv)
+
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	// 4. Inform via rpc that the task was completed 
+	/*
+	finishedArgs := FinishedArgs{}
+	finishedArgs.TaskId = workerId
+	finishedReply := FinishedReply{}
 	
-	ok := call("Coordinator.DoneDask", &args, &reply)
+	ok = call("Coordinator.DoneDask", &finishedArgs, &finishedReply)
 	if !ok {
 		fmt.Printf("call failed!\n")
 		return
-	}
+	}*/
+
 }
 
 // send an RPC request to the coordinator, wait for the response.

@@ -8,12 +8,14 @@ import "net/http"
 import "sync"
 
 
+type Task struct {
+	FileName string
+	Status int
+	Assigned int
+}
 type Coordinator struct {
 	mu sync.Mutex
-	Tasks []string // list of filepath strings
-	Statuses []int // 0 = unscheduled, 1 = in progress, 2 = done
-	Assigned []int
-	WorkerId int // unique id to incr + 1 for each new worker
+	Tasks []Task
 }
 
 
@@ -21,11 +23,10 @@ var nReduce int
 func (c *Coordinator) GetTask(args *Args, reply *Reply) error {
 	// TODO: add a queue based data structure instead of iterating for a task.
 	tasks := c.Tasks
-	statuses := c.Statuses
 
 	for i := range len(tasks) {
-		FileName := tasks[i]
-		Status := statuses[i]
+		FileName := tasks[i].FileName
+		Status := tasks[i].Status
 		
 		c.mu.Lock()
 		if Status == 1 || Status == 2 {
@@ -34,23 +35,23 @@ func (c *Coordinator) GetTask(args *Args, reply *Reply) error {
 		}
 		reply.NReduce = nReduce
 		reply.FileName = FileName
-		reply.WorkerId = c.WorkerId
-		c.WorkerId++
-		statuses[i] = 1
+		reply.WorkerId = i
+		
+		tasks[i].Status = 1
 		c.mu.Unlock()
 		break
 	}
 	return nil
 }
 
+/*
 func (c *Coordinator) DidTask(args *FinishedArgs, reply *FinishedReply) error {
 	// Todo: introduce timestamps 
-	/*
 	1. Lazily check the timestamp. So if the time elapsed is > 10s, we can assign (even if it is in progress)
 	2. Refactor into a single struct, so that everything is tightly cohesive. e.g. a tuple like (FileName, status, lastAssigned)
-	*/
 	return
 }
+*/
 
 func (c *Coordinator) server(sockname string) {
 	rpc.Register(c)
@@ -70,7 +71,8 @@ func (c *Coordinator) Done() bool {
 	ret := true
 
 	// Your code here.
-	for _, s := range c.Statuses {
+	for _, t := range c.Tasks {
+		s := t.Status
 		if s == 0 || s == 1 {
 			ret = false
 			break
@@ -88,9 +90,13 @@ func MakeCoordinator(sockname string, files []string, NewNReduce int) *Coordinat
 
 	// 1. Load the tasks (files) 
 	for _, f := range files {
-		c.Tasks = append(c.Tasks, f)
-		c.Statuses = append(c.Statuses, 0)
+		c.Tasks = append(c.Tasks, Task{
+			FileName: f,
+			Status: 0, 
+			Assigned: 0, // since unix epoch?
+		})
 	}
+
 	nReduce = NewNReduce
 	c.server(sockname)
 	return &c

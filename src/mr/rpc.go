@@ -15,7 +15,7 @@ type Reply struct {
 
 
 type FinishedArgs struct {
-	FileName string // Inform the coordinator the relevant file to grab
+	TaskId int
 }
 
 type FinishedReply struct {
