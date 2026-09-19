@@ -40,6 +40,7 @@ func MakeKVServer() *KVServer {
 func (kv *KVServer) Get(args *rpc.GetArgs, reply *rpc.GetReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	reply.Err = rpc.OK
 
 	val, exists := kv.mapping[args.Key]
 
@@ -58,30 +59,27 @@ func (kv *KVServer) Get(args *rpc.GetArgs, reply *rpc.GetReply) {
 func (kv *KVServer) Put(args *rpc.PutArgs, reply *rpc.PutReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	reply.Err = rpc.OK
 
 	val, exists := kv.mapping[args.Key]
-
 	if exists {
 		if args.Version != val.version {
-			reply.Err = rpc.ErrNoKey
+			reply.Err = rpc.ErrVersion
 			return
 		}
+
 		val.val = args.Value
 		val.version += 1
 		kv.mapping[args.Key] = val
-
 		return
-	} else {
-		if args.Version != rpc.Tversion(0) {
-			reply.Err = rpc.ErrNoKey
-			return
-		}
-
-		kv.mapping[args.Key] = sVersion{
-			val:     args.Value,
-			version: 1,
-		}
+	}
+	if args.Version != rpc.Tversion(0) {
+		reply.Err = rpc.ErrNoKey
 		return
+	}
+	kv.mapping[args.Key] = sVersion{
+		val:     args.Value,
+		version: 1,
 	}
 }
 
