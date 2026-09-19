@@ -14,56 +14,128 @@ type Task struct {
 	Status int
 	Assigned int64
 }
+
+type ReduceTask struct {
+	Status int
+	Assigned int64
+}
+
 type Coordinator struct {
 	mu sync.Mutex
 	Tasks []Task
+	ReduceTasks []ReduceTask
 }
 
 
 var nReduce int
+var amountDone int
+var reduceDone int
+var getTaskMutex sync.Mutex
+
 func (c *Coordinator) GetTask(args *Args, reply *Reply) error {
+	getTaskMutex.Lock()
+	defer getTaskMutex.Unlock()
 	// TODO: add a queue based data structure instead of iterating for a task.
-	tasks := c.Tasks
+	mapTasks := c.Tasks
 
-	for i := range len(tasks) {
+	// Mapping tasks are all complete
+
+	
+	if amountDone == len(mapTasks) {
+		reduceTasks := c.ReduceTasks
+
+		for i := range nReduce {
+			c.mu.Lock()
+			CurrentTime := time.Now().Unix()
+			Status := reduceTasks[i].Status
+			AssignedTime := reduceTasks[i].Assigned
+
+			if (Status == 1 && (CurrentTime - AssignedTime <= 10)) || Status == 2   { 
+				c.mu.Unlock()
+				continue
+			}
+			
+			// 2. Respond with assignment
+			reply.HasTasks = true
+			reply.MapTaskCount = len(mapTasks)
+			reply.IsReduce = true
+			reply.PartitionId = i
+
+			reduceTasks[i].Status = 1
+			reduceTasks[i].Assigned = CurrentTime
+			c.mu.Unlock()
+			break
+		}
+		
+		return nil
+	}
+
+
+	for i := range len(mapTasks) {
 		c.mu.Lock()
-
-		FileName := tasks[i].FileName
-		Status := tasks[i].Status
-		AssignedTime := tasks[i].Assigned
 		CurrentTime := time.Now().Unix()
+		FileName := mapTasks[i].FileName
+		Status := mapTasks[i].Status
+		AssignedTime := mapTasks[i].Assigned
 
-
-		if (Status == 1 && (CurrentTime - AssignedTime <= 10))|| Status == 2   { // cont if alrdy in prog / done, and if within the 10s limit
+		if (Status == 1 && (CurrentTime - AssignedTime <= 10))|| Status == 2   { 
 			c.mu.Unlock()
 			continue
 		}
-		fmt.Printf("Reassigning task %d with Status %d, Elapsed time since last assignment: %d\n", i, Status, CurrentTime - AssignedTime)
-		
+
+		reply.HasTasks = true
+		reply.MapTaskCount = len(mapTasks)
 		reply.NReduce = nReduce
 		reply.FileName = FileName
 		reply.WorkerId = i
 		
-		tasks[i].Status = 1
-		tasks[i].Assigned = CurrentTime
+
+		mapTasks[i].Status = 1
+		mapTasks[i].Assigned = CurrentTime
 		c.mu.Unlock()
 		break
 	}
+
 	return nil
 }
 
 func (c *Coordinator) DidTask(args *FinishedArgs, reply *FinishedReply) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	CurrentTime := time.Now().Unix()
-	Task := c.Tasks[args.TaskId]
 
-	// Ignore if elapsed
-	if CurrentTime - Task.Assigned > 10 {
-		fmt.Println("Task is too late and thus ignored")
-		return nil
+	if !args.IsReduce { 
+		Task := c.Tasks[args.TaskId]
+
+		// Ignore if elapsed
+		if CurrentTime - Task.Assigned > 10 {
+			fmt.Println("Task is too late and thus ignored")
+			return nil
+		}
+		if Task.Status != 1 {
+			return nil
+		}
+		
+		getTaskMutex.Lock()
+		defer getTaskMutex.Unlock()
+		amountDone++
+		c.Tasks[args.TaskId].Status = 2
+	} else {
+		Task := c.ReduceTasks[args.TaskId]
+
+		if CurrentTime - Task.Assigned > 10 {
+			fmt.Println("Task is too late and thus ignored")
+			return nil
+		}
+		if Task.Status != 1 {
+			return nil
+		}
+
+		getTaskMutex.Lock()
+		defer getTaskMutex.Unlock()
+		reduceDone++
+		c.ReduceTasks[args.TaskId].Status = 2
 	}
-
-	c.Tasks[args.TaskId].Status = 2
-	fmt.Printf("%d done", args.TaskId)
 	return nil
 }
 
@@ -82,18 +154,9 @@ func (c *Coordinator) server(sockname string) {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := true
-
-	// Your code here.
-	for _, t := range c.Tasks {
-		s := t.Status
-		if s == 0 || s == 1 {
-			ret = false
-			break
-		}
-	}
-
-	return ret
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return reduceDone == nReduce
 }
 
 // create a Coordinator.
@@ -102,12 +165,17 @@ func (c *Coordinator) Done() bool {
 func MakeCoordinator(sockname string, files []string, NewNReduce int) *Coordinator {
 	c := Coordinator{}
 
-	// 1. Load the tasks (files) 
 	for _, f := range files {
 		c.Tasks = append(c.Tasks, Task{
 			FileName: f,
 			Status: 0, 
-			Assigned: 0, // since unix epoch?
+			Assigned: 0,
+		})
+	}
+	for _ = range NewNReduce {
+		c.ReduceTasks = append(c.ReduceTasks, ReduceTask {
+			Status: 0,
+			Assigned: 0,
 		})
 	}
 
