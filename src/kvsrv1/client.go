@@ -1,7 +1,7 @@
 package kvsrv
 
 import (
-	"sync"
+	"fmt"
 
 	"6.5840/kvsrv1/rpc"
 	kvtest "6.5840/kvtest1"
@@ -29,8 +29,6 @@ func MakeClerk(clnt *tester.Clnt, server string) kvtest.IKVClerk {
 // The types of args and reply (including whether they are pointers)
 // must match the declared types of the RPC handler function's
 // arguments. Additionally, reply must be passed as a pointer.
-var m sync.Mutex
-
 func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 	for {
 		var args rpc.GetArgs
@@ -38,12 +36,16 @@ func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 
 		args.Key = key
 		ok := ck.clnt.Call(ck.server, "KVServer.Get", &args, &reply)
-		if ok {
-			return reply.Value, reply.Version, reply.Err
+
+		if !ok {
+			continue // retry if the req failed
 		}
-		if reply.Err == rpc.ErrNoKey {
-			return "", 0, rpc.ErrNoKey
+
+		if reply.Err != rpc.ErrNoKey && reply.Err != rpc.OK {
+			fmt.Printf("some odd err:%s\n", reply.Err)
+			continue
 		}
+		return reply.Value, reply.Version, reply.Err
 	}
 }
 
@@ -65,25 +67,33 @@ func (ck *Clerk) Get(key string) (string, rpc.Tversion, rpc.Err) {
 // must match the declared types of the RPC handler function's
 // arguments. Additionally, reply must be passed as a pointer.
 
-var rpcCalls int
-
 func (ck *Clerk) Put(key, value string, version rpc.Tversion) rpc.Err {
-	m.Lock()
-	defer m.Unlock()
-	rpcCalls += 1
+	var rpcCalls int
 
-	var args rpc.PutArgs
-	var reply rpc.PutReply
+	for {
+		rpcCalls += 1
 
-	args.Key = key
-	args.Value = value
-	args.Version = version
+		var args rpc.PutArgs
+		var reply rpc.PutReply
 
-	ok := ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply)
+		args.Key = key
+		args.Value = value
+		args.Version = version
 
-	if ok {
-		return reply.Err
+		ok := ck.clnt.Call(ck.server, "KVServer.Put", &args, &reply)
+
+		if !ok {
+			continue
+		}
+
+		if reply.Err != rpc.ErrVersion {
+			return reply.Err
+		}
+
+		if rpcCalls > 1 {
+			return rpc.ErrMaybe
+		}
+
+		return rpc.ErrVersion
 	}
-
-	return rpc.ErrNoKey
 }
