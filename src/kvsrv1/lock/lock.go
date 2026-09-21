@@ -1,7 +1,6 @@
 package lock
 
 import (
-	"fmt"
 	"time"
 
 	"6.5840/kvsrv1/rpc"
@@ -37,39 +36,50 @@ func (lk *Lock) Acquire() {
 	if err == rpc.OK {
 		return
 	}
-	if err == rpc.ErrVersion {
-		for {
-			time.Sleep(100 * time.Millisecond) // Poll 10 times / s
 
+	if err == rpc.ErrVersion || err == rpc.ErrMaybe {
+		for {
+			time.Sleep(100 * time.Millisecond)
 			lockStatus, vers, err := lk.ck.Get(lk.name)
 
-			if lockStatus == "t" || err != rpc.OK {
+			if err != rpc.OK { // no key
+				break
+			}
+
+			if lockStatus == "t" {
+				//fmt.Printf("lock already acquired for %s\n", lk.name)
 				continue
 			}
 
 			// 2. attempt to acquire the lock
 			err = lk.ck.Put(lk.name, "t", vers)
-			if err == rpc.OK {
+
+			if err == rpc.OK || err == rpc.ErrMaybe {
 				break
 			}
-
+			//fmt.Printf("acquire error: %s \n", err)
 		}
 
-	} else {
-		fmt.Printf("unhandled error %s\n", err)
 	}
 }
 
 func (lk *Lock) Release() {
-	_, vers, err := lk.ck.Get(lk.name)
 
-	if err != rpc.OK {
-		fmt.Printf("error :%s\n", err)
-	}
+	for {
+		time.Sleep(100 * time.Millisecond)
+		_, vers, err := lk.ck.Get(lk.name)
 
-	err = lk.ck.Put(lk.name, "f", vers)
+		if err != rpc.OK {
+			//fmt.Println("Key probably doesn't exist")
+			break
+		}
 
-	if err != rpc.OK {
-		fmt.Printf("error :%s\n", err)
+		err = lk.ck.Put(lk.name, "f", vers)
+
+		if err == rpc.OK {
+			break
+		}
+		//fmt.Printf("Release error: %s \n", err)
+
 	}
 }
